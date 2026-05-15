@@ -1,0 +1,261 @@
+\documentclass[12pt]{report}
+
+\usepackage{ODUThesis}
+
+\usepackage{lipsum} % for generating lorem ipsum
+
+% choose the spacing for your text
+
+% \singlespacing
+
+% \onehalfspacing
+
+\doublespacing
+
+% uncomment to bold the headings
+
+% \boldheadings
+
+\begin{document}
+
+\title{Measurement of the barium ion D$_{5/2}$ lifetime in a cryogenic vacuum chamber}
+
+\author{Isaiah McCoy}
+
+\degreeheld{}{April 2026}{Old Dominion University}
+
+\dissertation{} % remove to have title page say "A Thesis..."
+
+\degree{Bachelor of Science in Physics}
+
+\major{Physics, Professional}
+
+\submitdate{May 2026} % the month and year you submit your thesis
+
+\graduationyear{2026} % the year you graduate
+
+% \copyrightyear{2015}
+
+% if director does not have a Ph.D, use the title Prof.
+
+\director{Dr.}{Matt Grau}
+
+% \director{Prof.}{John T. Jones}
+
+% if there is a co-director, list both names as co-director instead of director
+
+% \codirector{Dr.}{John T. Jones}
+
+% \codirector{Prof.}{Kyle U. Kanada}
+
+\member{Charles Hyde}
+
+\member{Balša Terzić}
+
+% uncomment to include the signature line (no longer required)
+
+% \includesignline{}
+
+\begin{abstract}
+
+In this paper we measure the expected lifetime of Barium[+] D5/2. Barium ions are trapped in a quadrapole ion trap and are excited to the P3/2 with lasers. We record the time of emission from the metastable D5/2 state to the P1/2 under different temperatures.
+
+\end{abstract}
+
+% The dedication may not exceed one page and does not include a heading.
+
+% It is used to recognize those who supported you during your graduate study. Recognition of those who assisted in your academic research should be done on the acknowledgements page.
+
+\dedication{
+
+\begin{singlespace}
+
+\begin{center}
+
+This thesis is dedicated to the proposition\\
+
+that the harder you work, the luckier you get.
+
+\end{center}
+
+\end{singlespace}
+
+} % FIX 1: Added missing closing brace for \dedication
+
+\prefacesection{Acknowledgments}
+
+There are many people who have contributed to the successful completion of this dissertation. I extend many, many thanks to my committee members for their patience and hours of guidance on my research and editing of this manuscript. The untiring efforts of my major advisor deserve special recognition.
+
+\prefacesection{Nomenclature}
+
+\begin{tabular}{ll}
+
+$A$ & Amplitude Ratio, (No Units) \\
+
+$C$ & Centroid of pipe, inches \\
+
+$D_o$ & Outside Diameter of Pipe, inches \\
+
+$E$ & Modulus of Elasticity, ln/in2 \\
+
+$EH$ & Elastic Modulus at Operating Temperature, ln/in2 \\
+
+$f$ & Stress-Range Reduction Factor, (No Units) \\
+
+$F$ & Force, lbs \\
+
+$I$ & Moment of Inertia of Pipe, in4 \\
+
+$N$ & Number of Cycles, cycles \\
+
+$P$ & Pressure, lb/in2 \\
+
+$R$ & Stress Ratio, (No Units) \\
+
+$Sa$ & $Sh =$ Allowable Static Stress, lb/in2 \\
+
+$Sc$ & Allowable stress at Minimum Temperature (70\textdegree), lb/in2 \\
+
+$Se$ & Endurance Limit, lb/in2 \\
+
+$SY$ & Yield Strength, lb/in2 \\
+
+$V$ & Shear, lbs \\
+
+$ZNom$ & Section Modulus, in3
+
+\end{tabular}
+
+\tableofcontents
+
+\chapter{Introduction}
+
+\begin{table*}[htbp]
+
+\centering % FIX 2: was "centering" (missing backslash)
+
+\caption{Complete compilation of experimental measurements of the Ba$^+$ 5$d$ $^2$D$_{5/2}$ level lifetime and branching fractions (1980--2020).} % FIX 3: was "caption{...}" (missing backslash)
+
+\label{tab:ba_lifetime_full} % FIX 4: was "label{...}" (missing backslash)
+
+\footnotesize
+
+\begin{tabular}{p{0.7cm}p{3.5cm}p{3cm}p{1.5cm}p{2cm}p{2.5cm}p{4cm}}
+
+\hline\hline % FIX 5: was "hlinehline" (missing backslashes)
+
+Year & Authors & Journal Reference & Lifetime (s) & Uncertainty (s) & Branching Fraction$^a$ & Additional Notes \\
+
+\hline % FIX 6: was "hline" (missing backslash)
+
+1980 & Plumelle, Desaintfuscien, Duchene, Audoin & Opt. Commun. 34, 71 & 47 & $\pm 16$ & --- & Earliest measurement, large uncertainty \\[0.5ex]
+
+1986 & Nagourney, Sandberg, Dehmelt & Phys. Rev. Lett. 56, 2797 & 32 & $\pm 5$ & --- & Pioneering quantum jump spectroscopy, single ion \\[0.5ex]
+
+1990 & Madej, Sankey & Phys. Rev. A 41, 2621 & 34.5 & $\pm 3.5$ & --- & Multiple ions in Paul trap \\[0.5ex]
+
+1997 & Yu, Nagourney, Dehmelt & Phys. Rev. Lett. 78, 4898 & 32.3 & $\pm 2.6$ & --- & Multiple ions \\[0.5ex]
+
+2007 & Royen, Gurell, Lundin, Norlin, Mannervik & Phys. Rev. A 76, 030502(R) & 32.0 & $\pm 2.9$ & --- & Rapid communication \\[0.5ex]
+
+2007 & Gurell, Bi\'{e}mont, Blagoev, Fivet, Lundin, Mannervik, \textit{et al.} & Phys. Rev. A 75, 052506 & 32.0 & $\pm 2.9$ & --- & Laser-probing method, beam-foil \\[0.5ex]
+
+2014 & Auchter, Noel, Hoffman, Williams, Blinov & Phys. Rev. A 90, 060501(R) & 31.2 & $\pm 0.9$ & $0.846(25)(4)^b$ & Branching to 6S$_{1/2}$; $p < 7 \times 10^{-12}$ Torr \\[0.5ex]
+
+2015 & Dijck, Mohanty, Valappol, Nu\~{n}ez Portela, Willmann, Jungmann & Hyperfine Interact. 234, 85 & 26.4 & $\pm 1.7$ & --- & Preliminary result, single ion \\[0.5ex]
+
+2018 & Dijck, Mohanty, Valappol, Nu\~{n}ez Portela, Willmann, Jungmann & Phys. Rev. A 97, 032508 & 25.6 & $\pm 0.5$ & --- & Most precise; single \& multi-ion (1--4); extrapolated to $p=0$ \\[0.5ex] % FIX 7: bare & between "single" and "multi-ion" caused extra column — changed to \&
+
+2020 & Arnold, Wilson, Yost, Brewer, Carney, Fredrick, \textit{et al.} & Phys. Rev. A 101, 062515 & 30.14 & $\pm 0.40$ & --- & Derived from 6P$_{1/2}$ branching ratio measurements \\[0.5ex]
+
+% FIX 8: All "$pm X$" above corrected to "$\pm X$" (10 occurrences)
+
+\hline\hline % FIX 9: was "hlinehline" (missing backslashes)
+
+\multicolumn{7}{l}{$^a$Branching fraction for 5D$_{5/2} \to$ 6S$_{1/2}$ decay channel (remainder decays to 5D$_{3/2}$).} \\ % FIX 10: was "multicolumn{...}" (missing backslash)
+
+\multicolumn{7}{l}{$^b$Format: value(statistical uncertainty)(systematic uncertainty).} \\
+
+\end{tabular} % FIX 11: was "end{tabular}" (missing backslash)
+
+\end{table*} % FIX 12: was "end{table*}" (missing backslash)
+
+\section{Theoretical Formulations}
+
+\lipsum[4-14]
+
+\section{Purpose}
+
+\lipsum[15-18]
+
+\section{Problem}
+
+\lipsum[19-30]
+
+\chapter{Background of the Study}
+
+\lipsum[1-25]
+
+\section{Review of the Literature}
+
+\lipsum[26-30]
+
+\section{Limitations of Existing Studies}
+
+\lipsum[31-37]
+
+\chapter{Methodology}
+
+\section{Research Design}
+
+\section{Sample Collection}
+
+\section{Data Collection}
+
+\section{Measures}
+
+\section{The Survey Instrument}
+
+\section{Potential Benefits Subjects}
+
+\section{Potential Risks to Subjects}
+
+\chapter{Results}
+
+\section{Descriptive Analysis}
+
+\section{Bivariate Correlations}
+
+\section{Regression Results}
+
+\section{Performance Characteristics}
+
+\chapter{Discussion}
+
+\section{Overview of Findings}
+
+\section{Research Implementations}
+
+\section{Research Limitations}
+
+\chapter{Conclusion}
+
+\section{Primary Contributions of this Study}
+
+\section{Widening the Scope}
+
+\section{Suggestions for Future Research}
+
+\vita{
+
+Department \\
+
+Old Dominion University \\
+
+Norfolk, VA 23529
+
+}{The vita should contain the address for department of study and a brief biographical sketch listing educational background (including background for all previous degrees: degree, major subject, university and date of graduation). Other information is optional but encouraged: professional experience, publications, business or academic information. Name of the word processor may be stated at the bottom of the page. (In this case, \LaTeX.) The vita is limited to one page.
+
+}
+
+\end{document}
