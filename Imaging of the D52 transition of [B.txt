@@ -1,0 +1,49 @@
+Imaging of the D5/2 transition of [Ba]+ in an ion trap
+
+
+The reliability and effectiveness of a quantum computer is based on the ability to understand and control its building blocks. We are frequently discovering examples of quantum advantage like in protein folding, matrix diagonalization, and predictive modeling in conjunction with machine learning. In this paper we discuss the measurement of the lifetime of the D5/2 state of the [Ba]+ ion in a linear Paul trap via camera imaging and object detection methods.
+
+ 
+The Ion Trap is a quadrupole trap with an oscillating Electromagnetic field that "juggles" the Barium Ion in order to confine it inside of the trap. previous work has been done and is still in progress with lowering the time necessary to load ions into the trap. There is a 455nm led to pump the the electrons from 6S1/2 to 6P3/2 and there is a ??????493nm laser that pumps electrons from 6S1/2 to 6P1/2. The 5D1/2 state can decay to 5D3/2 or to 6S1/2. a red ????650 nm laser return electrons that decay to the 5D3/2 state to the 6P1/2 state. Understanding the life time for various decays informs us about the decoherence time of the quantum system which translates limits the amount of operations can be reliably preformed in a given time. We can use imaging and object detection to automate the repetition of the measurement and achieve much higher precision than would be reasonable if the data had to be reviewed by hand. We can also consider the limit of the effectiveness of cmos imaging at the given resolution, framerate, and exposure.
+
+
+
+
+
+We ionize the barium in an oven.
+We then release ions into the trap and close the trap when the desired number of ions might be in the trap.
+We wait for the trapped ions to stabilize.
+we fluoresce the led to ensure there are no additional ions?????
+once the number of ions is detected stably for some time, 5tau????, then we fluoresce the led in order to drive the transition??, this appears as blank to the camera. When the atom makes the decay from 5D3/2, It appears as bright again to the camera. The Time from the darkening to the reappearance of the ion is a sample of the relaxation time that we will use to find the expectation value of the lifetime of the 5D3/2 state.
+
+
+
+The trap spatially filters the multiple ions in a trap. The ions in the trap appear in images in a roughly elliptical due to its small size and the oscillating Electromagnetic field of the trap. Determining the number and positions of the ions in the trap relies on the detection of both features in an image. Advances in cooling allows for cleaner images with more prominent features and less noise. The noise appears to be a mixture of gaussian and salt & pepper noise. We want to transform the image data into a (n+1) x t matrix where n is the maximum number of possible detected trapped ions during a given period of time with additional space to flag anomalous and/or certainty of detection. While we can use circle detection???? to detect circles, It can be difficult to separate from noise and tune the object detection algorithm in order to not create degenerate circles. The most clear indicator of the number of separate ions will be found in the change in the density of pixels along the line of special filtration, with overall elliptical curvature considered also or secondarily. 
+
+Employing a process of noise reduction and contour detection is suited to detect these features as they are expressed in local changes in gradient and curl; or alternatively the convolution of the image matrix with a specific kernel?????.The apparent area occupied by the ion is rough and discontinuous Because the particle Has moved and fluoresced several individual times in a single frame (example exposure time & fluoresce count?????). 
+I will explain the filters used for noise reduction of image.
+A median blur for our purposes, has the dual purpose or smoothing the signal over the area the ion appears to be confined to and smoothing out the smaller noise spikes.
+The median blur is a non-linear operation that takes a kernel, 3x3 in our case ????, and overlays it with the image matrix, and then replaces the central element with the median element of the pixels overlayed by the kernel. This will erase small spikes of around 1-4 pixels depending on their surrounding; It will also fill in pixels inside of the region the ion is observed.
+ further morphological transformations can be seen as a linear operation on the image matrix that is convolved with the kernel.
+The erosion filter replaces the element in the middle of the overlayed kernel with the minimum magnitude in the sample area. 
+The dilation filter replaces the element in the middle of the overlayed kernel with the maximum magnitude in the sample area and is the dual of erosion. These are the two most fundamental operations in mathematical morphology.
+An opening filter is equivalent to applying an erosion filter and applying a dilation filter using the same kernel and has the effect of removing small bright peaks in the image and smoothing. 
+A closing filter is a dilation followed by and erosion using the same structuring element. The closing filter has the effect of filling in dark "peaks" in a bright area.
+
+Various kernels and sequences of these and other filters can be tuned to assist the with highlighting important features and noise. detection and move towards describing the numerical certainty of measuring the state of the ion while imaged with a camera. Future image filtering can be optimized through machine learning or related to a more specific Bayesian measurement uncertainty.
+
+after noise reduction, we threshold the image in order to transform the greyscale image into a binary one for contour detection. contour detection can be done with greyscale images, but it is much more computationally intensive and does not seem to offer substantial improvement with the relatively simple image of the ion. Contours are roughly continuous regions with a change in intensity, 0 to 1 in a binary image. The previous filtering makes it more likely for the regions the ions occupy to be discrete and solid when transformed into a binary image for straightforward contour detection.
+We then use the detected contours in order to count and approximate the position of the ions in the trap.
+
+
+we can approximate the signal to noise ratio of a fluorescing ion in single lowest exposure frame by preforming object detection on the higher exposure image, or average of several images, in order to approximate the center or most representative pixel of the ion and taking the expectation value of the f(x)=pixelbrightness(*)contour area????? pixelbrighntess/contour area??? would sharp features here with little roughness indicate an easy to detect signal ? scalar product Integral(fx*E^-wx2))??. This can be used for optimization of the detection algorithm and keeping track of the real time stability of the ions.
+
+
+
+
+
+The output of our detection system is a (n + p) x t matrix where n if the number of ions and each row n holds the approximate position of each ion for each time step t. It may be possible that the ions can swap positions while dark. "Bright" Ions can warm adjacent dark ions and slightly reduce the measured lifetime. row(s) p holds relevant flags. p includes the Lehmer code number of the corresponding permutations of position the ions can be in while ions are dark during a trial of the experiment along with the Kendal tau distance ( minimum number  of adjacent swaps) and the minimum number of swaps at the boundary of the trap???? and if there is some clear anomaly in the number of ions according to the stages of the experimental and the apparent stability of the position of the ion in the image.
+
+
+
+
