@@ -2,8 +2,6 @@
 
 \usepackage{ODUThesis}
 
-\usepackage{lipsum} % for generating lorem ipsum
-
 % choose the spacing for your text
 
 % \singlespacing
@@ -58,7 +56,11 @@
 
 \begin{abstract}
 
-In this paper we measure the expected lifetime of Barium[+] D5/2. Barium ions are trapped in a quadrapole ion trap and are excited to the P3/2 with lasers. We record the time of emission from the metastable D5/2 state to the P1/2 under different temperatures.
+This thesis documents the image-analysis and validation framework used to support a measurement of the Ba$^+$ 5$d$ $^2$D$_{5/2}$ metastable-state lifetime in a cryogenic vacuum chamber. The central technical problem is not only to detect fluorescence from trapped ions, but to convert camera frames into a defensible visible-ion count while preserving the distinction between image-local evidence and downstream lifetime inference. The current detector, implemented in \texttt{analyze\_ions\_fft.py}, uses a six-stage pipeline consisting of background estimation, noise-power diagnostics, prefilter selection, corridor and point-spread-function estimation, matched-filter detection, and state summarization. Its public claim surface is deliberately limited to image-local quantities such as visible-ion count, centroid geometry, spacing, point-spread-function width, and confidence diagnostics.
+
+The detector contract is paired with an architecture review and a typed symbol dictionary so that implementation, notation, and validation boundaries remain aligned. In particular, the thesis treats branch-specific residual fields, calibrated threshold movement, and measurement-precision diagnostics as mediating quantities rather than direct physics observables. This prevents single-frame image statistics from being overinterpreted as a lifetime measurement or as proof of collision, blackbody, or stray-light corrections. Manual-review artifacts currently define the strict validation frontier: the detector is auditable and substantially validated, but not yet at complete manual-count parity across the reviewed corpus.
+
+The main contribution of this thesis is therefore methodological. It establishes a reproducible detector workflow for trapped-ion image analysis, clarifies the mathematical status of the detector's variables and outputs, and defines how those outputs may be carried forward into a later rate-axis lifetime analysis without collapsing visible-state evidence into unsupported physical claims.
 
 \end{abstract}
 
@@ -90,39 +92,29 @@ There are many people who have contributed to the successful completion of this 
 
 \begin{tabular}{ll}
 
-$A$ & Amplitude Ratio, (No Units) \\
+$I(r,c)$ & Observed grayscale image intensity at pixel $(r,c)$ \\
 
-$C$ & Centroid of pipe, inches \\
+$\hat{B}(r,c)$ & Estimated slowly varying background and scatter field \\
 
-$D_o$ & Outside Diameter of Pipe, inches \\
+$S(r,c)$ & Reconstructed signal field from accepted ion templates \\
 
-$E$ & Modulus of Elasticity, ln/in2 \\
+$r_v(r,c)$ & Residual field for detector branch $v$ \\
 
-$EH$ & Elastic Modulus at Operating Temperature, ln/in2 \\
+$N$ & Visible-ion count reported for one frame \\
 
-$f$ & Stress-Range Reduction Factor, (No Units) \\
+$h_v$ & Variant-specific localized detector template kernel \\
 
-$F$ & Force, lbs \\
+$s_{v,k}$ & Detection score for candidate $k$ under branch $v$ \\
 
-$I$ & Moment of Inertia of Pipe, in4 \\
+$\tau_v^*$ & Final branch-specific acceptance threshold \\
 
-$N$ & Number of Cycles, cycles \\
+$\bar{\eta}_v(r,c)$ & Mean calibrated branch residual field \\
 
-$P$ & Pressure, lb/in2 \\
+$\rho_{\mathrm{rss}}$ & Root-sum-square state signal-to-noise summary \\
 
-$R$ & Stress Ratio, (No Units) \\
+$\tau_{D_{5/2}}$ & Metastable-state lifetime of the Ba$^+$ 5$d$ $^2$D$_{5/2}$ level \\
 
-$Sa$ & $Sh =$ Allowable Static Stress, lb/in2 \\
-
-$Sc$ & Allowable stress at Minimum Temperature (70\textdegree), lb/in2 \\
-
-$Se$ & Endurance Limit, lb/in2 \\
-
-$SY$ & Yield Strength, lb/in2 \\
-
-$V$ & Shear, lbs \\
-
-$ZNom$ & Section Modulus, in3
+$\gamma_i$ & Additive rate-axis systematic correction term
 
 \end{tabular}
 
@@ -182,69 +174,164 @@ Year & Authors & Journal Reference & Lifetime (s) & Uncertainty (s) & Branching 
 
 \section{Theoretical Formulations}
 
-\lipsum[4-14]
+The detector documented in this thesis treats one camera frame as an image-formation problem before it is treated as a counting problem. The working observation model is
+
+$$
+I(r,c) = B(r,c) + \sum_{k=1}^{N} A_k h(r-r_k,c-c_k) + \epsilon(r,c),
+$$
+
+where $I(r,c)$ is the observed image, $B(r,c)$ is the slowly varying background field, $A_k$ and $(r_k,c_k)$ are the amplitude and location of the $k$th visible ion, $h$ is an effective detector template, and $\epsilon(r,c)$ collects unmodeled detector noise. This model is intentionally modest. It does not claim that the optical transfer function of the apparatus has been solved in full; it states only that localized bright structures can be represented by a black-box template family that is sufficient for the detector's counting task.
+
+The updated algorithm contract further distinguishes the shared corrected image from branch-specific residual structure. After background subtraction and source reconstruction, the branch residual is written
+
+$$
+r_v(r,c) = I(r,c) - B(r,c) - S_v(r,c),
+$$
+
+with $v$ indexing the four public Stage 5 branches: anisotropic Gaussian, symmetric Gaussian, anisotropic Poisson, and symmetric Poisson. This distinction matters because the calibrated residual mean $\bar{\eta}_v(r,c)$ and the score-admissibility quantities derived from branch residual power are branch-local mediators. They are not interchangeable across variants, and they are not themselves observable physics quantities.
+
+The central theoretical point of the detector is therefore a claim boundary. A frame can justify image-local outputs such as visible-ion count, accepted-centroid geometry, spacing, matched-response summaries, and confidence diagnostics. A frame cannot, by itself, justify a radiative lifetime or infer collision, blackbody, or leakage-light corrections. Those claims require an additional lifetime model built from bright-to-dark and dark-to-bright state durations over time, not from a single image statistic.
 
 \section{Purpose}
 
-\lipsum[15-18]
+The purpose of this thesis is to update the measurement narrative so that the written paper matches the current detector, repository architecture, and validation record. In the earlier template state of the manuscript, much of the core scientific method was either absent or represented by placeholder text. The updated version instead describes the deployed single-frame detector path, the documented limits of its claim surface, and the workflow by which detector outputs feed later lifetime analysis.
+
+More specifically, the thesis has three goals. First, it provides a reproducible account of how trapped-ion fluorescence images are transformed into visible-ion counts and geometric summaries. Second, it defines the detector's intermediate quantities in a notation that is consistent with the implementation and the project symbol dictionary. Third, it prevents overclaiming by separating camera-visible evidence from the later inverse-time corrections needed to estimate the natural Ba$^+$ D$_{5/2}$ lifetime.
 
 \section{Problem}
 
-\lipsum[19-30]
+The experimental problem is deceptively simple: determine when a trapped barium ion is bright and when it is shelved dark. In practice, the image data contain spatially varying background, structured residual power, non-ideal point-spread functions, and branch-dependent detection behavior. A naive threshold on pixel intensity or local maxima would confound visible-state changes with nuisance structure in the image.
+
+The detector problem is therefore to assign a visible-ion count in a way that remains stable under changing noise regimes and transparent under audit. The updated project documents show that this requires more than a single matched-filter score. The detector must expose its background estimate, noise-regime classification, branch-local score thresholds, accepted and rejected evidence sets, and measurement-precision diagnostics. Only with those intermediate quantities visible can the lifetime pipeline inherit a count sequence that is technically defensible.
 
 \chapter{Background of the Study}
 
-\lipsum[1-25]
+The Ba$^+$ 5$d$ $^2$D$_{5/2}$ lifetime has been measured repeatedly over several decades, and the literature compiled in Table~\ref{tab:ba_lifetime_full} shows both progress and unresolved spread. Early measurements carried large uncertainties, while later work reduced the error bars substantially. The two most precise recent results in the table, $25.6 \pm 0.5$ s and $30.14 \pm 0.40$ s, demonstrate that precision alone does not eliminate the need for careful modeling of apparatus-specific effects and validation boundaries.
+
+For the present project, the detector is motivated by the electron-shelving picture used in trapped-ion experiments. A Ba$^+$ ion can remain trapped while becoming optically dark, so the observed fluorescence count is a visible-state variable rather than a direct occupancy measurement. This distinction becomes central when the image detector is linked to lifetime extraction: the detector reports what is visible in a frame, while the lifetime analysis later interprets visible-state transitions in a time series.
+
+The updated repository documentation also clarifies that this project is not a generic microscopy detector. It is tuned to a narrower class of trapped-ion images in which ions appear as localized bright spots arranged along a quasi-one-dimensional chain. That assumption supports the use of line geometry, axial spacing summaries, and corridor-aware matched filtering without claiming universal validity for arbitrary fluorescence scenes.
 
 \section{Review of the Literature}
 
-\lipsum[26-30]
+The literature in Table~\ref{tab:ba_lifetime_full} shows an evolution from early multi-ion or beam-foil measurements to single-ion quantum-jump and branching-fraction-informed studies. The progression is scientifically valuable for two reasons. First, it demonstrates that the Ba$^+$ D$_{5/2}$ lifetime is experimentally accessible but highly sensitive to systematic treatment. Second, it shows that improvements in detection and state assignment are inseparable from improvements in the reported lifetime itself.
+
+The current thesis therefore places image analysis in the foreground rather than treating it as a minor preprocessing step. Modern detector performance depends not only on optical collection and vacuum quality but also on whether the image-analysis code exposes an auditable path from pixel data to accepted count states. The updated algorithm contract, architecture review, and symbol dictionary were written precisely to make that path explicit.
 
 \section{Limitations of Existing Studies}
 
-\lipsum[31-37]
+The principal limitation of many summarized studies, at least from the perspective of this thesis, is that image-level decision structure is often compressed into a final count or lifetime estimate. For the present detector, that compression would be premature. The updated project documents show that branch-local calibration, signed threshold movement, and manual-review validation are still active scientific surfaces rather than fully closed engineering details.
+
+The current manual-review frontier illustrates this point. The typed dictionary records 113 strictly scored manual-review frames, of which 104 are strict matches and 9 remain strict mismatches, with threshold adjustments active on a smaller subset of frames. This is strong enough to support a transparent detector narrative, but not strong enough to justify language implying complete parity between automatic and manual counts. The thesis must therefore report the detector as validated and auditable, while still incomplete at the strictest frontier.
 
 \chapter{Methodology}
 
 \section{Research Design}
 
+The research design is centered on a staged image-analysis pipeline implemented in \texttt{analyze\_ions\_fft.py}. The six stages are: background and noise-regime estimation, noise-power-spectrum diagnostics, prefilter selection, corridor and point-spread-function estimation, matched-filter detection, and state summary assembly. The top-level entry point \texttt{analyze\_array()} executes the full sequence for a single image already loaded in memory, while \texttt{analyze\_path()} applies the same pipeline to one image file on disk.
+
+This staged design serves two purposes. Numerically, it separates nuisance estimation from candidate scoring and final count assignment. Scientifically, it exposes intermediate artifacts that can be validated independently: the dense background field, the response-noise scale, the branch-local accepted and rejected candidate sets, and the state-level geometry summaries. That separation is one of the main ways the updated detector avoids collapsing engineering convenience into unsupported physical claims.
+
 \section{Sample Collection}
+
+The detector operates on integer-valued grayscale images acquired either as ordinary image files or as camera archives stored in \texttt{.npz} containers. The repository workflow is organized around these archive inputs, which can be processed one frame at a time or as larger bundled runs. For batch work, the project routes data through \texttt{run\_npz\_batch.py}, which stages frame loading, schedules analysis, and writes compact result bundles for later extraction.
+
+This choice of data structure is methodologically important. It preserves a direct lineage from raw or cleaned camera imagery to single-frame detector outputs and then to run-level or batch-level summaries. The architecture note identifies that lineage explicitly so that downstream lifetime calculations can be traced back to the image frames that produced each visible-count sequence.
 
 \section{Data Collection}
 
+For each frame, the detector first estimates a dense background surface from robust tile statistics and classifies the local noise regime using Fano-factor, mean-variance, whiteness, spectral-flatness, and anisotropy diagnostics. It then constructs a corrected working image, computes branch-specific matched-response evidence, and partitions candidate ions into accepted and rejected sets according to branch-specific thresholds.
+
+Manual-review data provide the additional calibration surface used for the branch residual field and threshold admissibility logic. The intended review workflow is to export flagged review frames, score them in a count template, rebuild a detector-update dataset, and then run the manual detector update tooling. In the updated repository, this workflow is not described as an informal quality-control step; it is part of the scientific labor that makes detector thresholds and residual corrections publicly inspectable.
+
 \section{Measures}
 
-\section{The Survey Instrument}
+The detector's public measures are image-local. The most important are visible-ion count, accepted-ion centroid coordinates, line geometry, median axial spacing, matched-signal summaries, and per-frame confidence diagnostics. The state summary reported by the code includes
+
+$$
+N = |A_m|, \qquad
+\rho_{\mathrm{rss}} = \sqrt{\sum_i \mathrm{SNR}_i^2},
+$$
+
+along with the weakest accepted-ion signal-to-noise ratio and the mean accepted-ion signal-to-noise ratio. At the decision level, the detector also tracks accepted and rejected score sets so that decision margin and evidence margin can be reported rather than inferred after the fact.
+
+The implementation further emits a measurement-precision score derived from uncertainty estimates on the Fano factor, the mean-variance slope, and noise-power diagnostics. This score is useful because it expresses how confidently the frame's noise statistics have been estimated from the frame itself. However, it remains a detector-confidence quantity, not a direct measure of physical precision in the lifetime experiment.
+
+\section{Manual Review Instrument}
+
+The manual review instrument in this project is the count-template workflow rather than a questionnaire. Review images are exported from flagged frames, manually labeled in \texttt{manual\_count\_template.csv}, and converted into a detector-update dataset. These labels define the calibration and validation corpus used to assess strict agreement between the detector and human review.
+
+This manual instrument matters because it defines the detector's current scientific frontier. Threshold movement, branch-local residual calibration, and mismatch reports are all meaningful only because they are checked against an external count assignment rather than against the detector's own internal preferences.
 
 \section{Potential Benefits Subjects}
 
+There are no human subjects in the conventional survey sense; the benefits are scientific and methodological. A detector with explicit validation boundaries improves the credibility of lifetime estimates derived from long image sequences. It also reduces the risk that downstream physics interpretations will inherit silent image-processing assumptions that cannot be reproduced or challenged.
+
 \section{Potential Risks to Subjects}
+
+The main risks are analytical rather than human. The most significant are overclaiming from single-frame evidence, confusing visible-state changes with trap-occupancy changes, and treating heuristic thresholds as calibrated truths. Additional risks arise when planned detector surfaces, such as a future structured-noise whitening path, are described as if they already controlled the deployed pipeline. The updated thesis addresses these risks by tying claims to the documented implementation and by marking partial surfaces as partial.
 
 \chapter{Results}
 
 \section{Descriptive Analysis}
 
-\section{Bivariate Correlations}
+The updated detector produces a much richer descriptive result than a bare ion count. For each frame it returns the selected signal-to-noise branch, the accepted detections, rejected detections, state-level geometry, spectral spacing metrics, and evidence summaries describing the noise regime and measurement precision. This structure is sufficient to reconstruct not only what count was reported, but why the algorithm preferred that count under the active branch and threshold settings.
 
-\section{Regression Results}
+At the project level, the architecture now separates single-frame analysis, batch orchestration, bundle writing, JSONL extraction, and downstream lifetime computation into distinct modules. That separation is itself a result: it makes it possible to ask whether an apparent physics issue is actually a detector problem, a batch-aggregation problem, or a lifetime-model problem.
+
+\section{Detector-Confidence Relationships}
+
+The implementation shows that detector confidence is not concentrated in one statistic. Background-noise classification combines Fano-factor and mean-variance behavior with power-spectrum diagnostics, while the final visible-ion count also depends on branch-specific accepted and rejected score sets. As a result, relationships among descriptive quantities matter more than any isolated scalar. A frame with strong matched response but poor measurement precision should not be interpreted in the same way as a frame with both high response separation and well-determined noise statistics.
+
+This is one reason the updated detector exports quantities such as decision margin, evidence margin, and measurement-precision score side by side. Together they reveal whether a reported count arose from a wide acceptance gap, a narrow threshold crossing, or a regime in which the background statistics themselves were weakly estimated.
+
+\section{Validation Frontier}
+
+The most important quantitative result available from the updated thesis-facing documents is the current manual-review frontier. The typed dictionary records 113 strictly scored manual-review frames, 104 strict matches, 9 strict mismatches, and a smaller subset of frames on which signed threshold adjustment was active. This should be read as an auditable frontier rather than as a final parity claim.
+
+That result has two implications. First, the detector is already strong enough to support a precise methodology chapter because its successes and failures are both visible in maintained artifacts. Second, the remaining mismatches are scientifically useful because they identify where branch-local residual structure, threshold intervals, or detector assumptions still require refinement before the detector can be presented as fully converged.
 
 \section{Performance Characteristics}
+
+From an implementation standpoint, the detector is designed for both interactive and batch use. The same core analysis can be called on a single array, a single image path, a short image sequence, or one or more \texttt{.npz} archives. The matched filter is implemented with FFT-based cross-correlation, and the runtime surface includes CPU and optional GPU execution metadata.
+
+Equally important, the project now records result provenance in a way that survives batching. Frame results can be staged into bundles, extracted to JSONL, and carried forward into lifetime tools without losing the selected branch, state summary, or calibration context that produced the visible-ion count. That traceability is a performance characteristic in the scientific sense, not only in the computational sense.
 
 \chapter{Discussion}
 
 \section{Overview of Findings}
 
-\section{Research Implementations}
+The main finding of this updated thesis is that the most defensible contribution at the present stage of the project is a validated detector contract rather than a detached lifetime number. The repository now has a clear four-document answer surface: runnable operator guidance in the README, detector mathematics and claim boundaries in the algorithm note, data-flow and ownership in the architecture document, and symbol status and validation vocabulary in the typed dictionary. The thesis can therefore describe the experiment in terms that match the current code.
+
+This alignment matters because the detector is no longer treated as a black box. The visible-ion count is explicitly mediated by background lifting, branch scoring, thresholding, and state assembly. The detector's intermediate quantities are named, auditable, and bounded, which makes later lifetime inference stronger even before final parity is achieved.
+
+\section{Implementation Implications}
+
+The implementation implications are immediate. First, the project should continue to treat image-local metrics and lifetime-physics metrics as separate layers joined by explicit data lineage. Second, manual-review tooling should remain part of the core scientific workflow because it is the mechanism by which detector calibration becomes public rather than merely internal. Third, any future promotion of noncanonical Stage 5 score modes must be accompanied by mode-keyed calibration artifacts, not only by better-looking counts on a few examples.
+
+The architecture note also suggests a practical implementation philosophy: single-frame detection, batch orchestration, bundle management, and lifetime estimation should remain modular. That separation makes validation failures easier to localize and reduces the temptation to hide detector uncertainty inside downstream physics summaries.
 
 \section{Research Limitations}
+
+The present work has three important limitations. The first is scientific scope: the canonical detector claims only image-local outputs and does not infer a lifetime from a single frame. The second is validation scope: the current manual-review frontier is strong but incomplete, so the thesis must not imply full automatic-manual parity. The third is implementation scope: some structured-noise and experimental-variant paths remain planned or partial and therefore cannot be described as established runtime behavior.
+
+These limitations do not weaken the thesis; they sharpen it. A precise statement of what has been implemented and validated is more valuable than a broad statement that blurs image analysis, calibration, and lifetime physics into one unsupported claim.
 
 \chapter{Conclusion}
 
 \section{Primary Contributions of this Study}
 
+This study contributes a thesis-aligned description of the Ba$^+$ trapped-ion image-analysis pipeline currently used in the project. It formalizes the observation model, states the detector's claim boundary, replaces placeholder manuscript sections with implementation-based methodology, and ties the written notation to a maintained symbol dictionary. It also reframes detector validation as an auditable scientific result rather than as hidden preprocessing.
+
 \section{Widening the Scope}
 
+The natural way to widen the scope of this work is not to loosen the current claim boundary, but to extend it in controlled steps. The first extension is improved manual-count parity across the reviewed corpus. The second is explicit coupling of validated visible-count epochs to the downstream rate-axis lifetime model. Only after those steps are stable should broader claims about apparatus systematics or alternative detector families be elevated into the main thesis argument.
+
 \section{Suggestions for Future Research}
+
+Future work should focus on three areas. The first is closure of the remaining strict manual-review mismatches through branch-local calibration and threshold-boundary refinement. The second is end-to-end uncertainty propagation from frame-level detector confidence to lifetime-level rate estimates. The third is comparative evaluation of experimental structured-noise, Bayesian, or Poisson-GLRT detector variants under the same artifact and validation standards used by the canonical detector.
+
+If those next steps are completed, the project will be positioned to move from a strong detector-method thesis to a stronger detector-plus-lifetime thesis in which the final physics estimate inherits a transparent and reproducible image-analysis foundation.
 
 \vita{
 
