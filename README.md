@@ -5,13 +5,24 @@ localizes accepted ions, and reports confidence and diagnostic information for
 single frames, image sequences, and `.npz` camera archives.
 
 The single-frame public claim surface is limited to image-local outputs:
-visible-ion count, accepted-ion position and spacing, PSF or noise estimates,
-and per-frame confidence diagnostics. TrapDetect does not claim that one frame
+visible-ion count, accepted-ion position and spacing, localized template or
+noise estimates, and per-frame confidence diagnostics. TrapDetect does not claim that one frame
 directly yields a radiative lifetime or that image statistics alone recover
 collision, blackbody, or leakage-light corrections.
 
 The repository includes example NPZ data in `run1/`. For the detector model,
-PSF assumptions, and stage-by-stage math, see [ALGORITHM.md](ALGORITHM.md).
+black-box template assumptions, and stage-by-stage math, see [algorithm.md](algorithm.md).
+
+## Documentation Map
+
+These four documents are the maintained answer surface for the project:
+
+| Question | Start here |
+| -------- | ---------- |
+| How do I install, run, validate, or inspect outputs? | [README.md](README.md) |
+| What does the detector claim, mathematically and scientifically? | [algorithm.md](algorithm.md) |
+| How do modules, data, artifacts, and risks connect? | [notes/project_architecture_mermaid.md](notes/project_architecture_mermaid.md) |
+| What does a symbol, validation boundary, or thesis audit term mean? | [notes/thesis_academic_dictionary.jsonl](notes/thesis_academic_dictionary.jsonl) |
 
 ## Install
 
@@ -66,16 +77,34 @@ etc.) are placeholders — substitute whatever paths you want.
 
 | Situation | Use this API or CLI | Main output |
 | --------- | ------------------- | ----------- |
-| One frame already in memory or one image on disk | `analyze_array()` / `analyze_path()` or `analyze_ions_fft.py` | One frame result `dict` |
+| One frame already in memory or one image on disk | `analyze_ions_fft.analyze_array()` / `analyze_path()` or `analyze_ions_fft.py` | One frame result `dict` |
 | Several ordinary image files | `run_batch()` or `analyze_batch.py` | Batch `dict` with per-run reducers (`frames`, `series_stats`, `state_matrix`) |
 | One `.npz` archive or a directory of archives | `run()` or `run_npz_batch.py` | Top-level batch `dict` with multi-run aggregation, bundle writing, and parallel loading/analysis |
 | A bundle `.npz` you want to inspect or export | `extract_npz_json()` or `extract_npz_json.py` | Readable JSONL files, `batch_summary.jsonl`, and typed variant audit rows |
+| Manual-review-driven detector calibration, starting from either an existing review CSV or a newly selected review-image set | `tools/manual_review/export_flagged_review_frames.py` -> `tools/manual_data/rebuild_manual_test_data.py` or default auto-rebuild -> `tools/manual_detector_update.py` | Review PNGs, `manual_count_template.csv`, detector-update dataset NPZ, per-variant calibration artifacts, override JSONL, and update report |
+
+For manual review, the intended operator chain is:
+
+`tools/manual_review/export_flagged_review_frames.py` -> edit `manual_count_template.csv` -> rebuild or auto-rebuild detector-update dataset -> `tools/manual_detector_update.py`
 
 The mainline mediation chain is:
 
 `analyze_ions_fft.py` -> `analyze_batch.py` -> `run_npz_batch.py` -> `extract_npz_json.py` / `calculate_lifetime_precision.py`
 
 Large-job parallelization, memory budgeting, and scratch-flow management remain concentrated in `run_npz_batch.py`.
+
+For library imports, prefer the root modules that now own the runtime surface:
+
+- `analyze_ions_fft`, `working_image`, `stage4`, `stage5`, and `stage6` for single-frame detector entrypoints and staged helpers
+- `runner`, `orchestration`, `frame_staging`, `npz_frames`, `bundle_io`, `scratch_io`, and `snr_variant_jsonl` for batch orchestration helpers
+- `manual_count_paths`, `manual_review_contract`, and `npz_frame_access` for manual-review and frame-access helpers
+
+The root scripts and modules are now the canonical public entrypoints for both CLI and library use.
+
+For the canonical single-frame runtime, Stage 3--5 operate on a dense
+background-corrected full-frame working image by default. Legacy ROI
+restriction and Gaussian warning-count repairs remain explicit compatibility
+gates rather than canonical defaults.
 
 ## Use From Jupyter
 
@@ -127,6 +156,14 @@ print(run0["summary"]["modal_ion_count"])
 print(run0["position_matrix"]["x_px"].shape)
 ```
 
+Use the batch CLI with `--detector-module` when you want the same archive flow
+to run through an alternate single-frame detector module, for example the
+experimental float32 path:
+
+```text
+python run_npz_batch.py --detector-module analyze_ions_fft_float32 --stage5-selected-noise-only --auto-bundle run1
+```
+
 ### Bundle extraction
 
 After creating a bundle `.npz`, use `extract_npz_json()` to write readable JSONL
@@ -173,6 +210,22 @@ Analyze one archive; auto-name the bundle:
 
 ```text
 python run_npz_batch.py -a --auto-bundle run1/photon_count0.npz
+```
+
+The intended default batch workflow is bundle-first: the initial
+`run_npz_batch.py` command writes a frame-stats-only NPZ bundle, and any JSONL
+extraction or run/batch reductions happen afterwards in separate commands.
+
+Extract readable JSONL after the bundle has been written:
+
+```text
+python extract_npz_json.py your_frame_stats_bundle.npz out/
+```
+
+Add deferred run-level and batch-level reductions afterwards:
+
+```text
+python run_npz_batch.py --reduce-existing-bundle your_frame_stats_bundle.npz --with-run-stats --with-batch-stats --bundle-npz your_derived_stats_bundle.npz
 ```
 
 Analyze a directory of archives with the default all-frame configuration, the
@@ -372,6 +425,14 @@ Write only the batch-level summary file:
 python extract_npz_json.py --summary_only run1_bundle.npz out/
 ```
 
+For supported bundles, that batch-level extraction is now the report surface as
+well: `batch_summary.jsonl` includes typed lifetime report rows such as
+`lifetime_mode_summary`, `lifetime_mode_comparison`, `lifetime_mode_selection`,
+`lifetime_mode_diagnostics`, `lifetime_mode_histogram`, and
+`lifetime_mode_fit_state`, and the extractor also writes companion
+`lifetime_report.json` and `lifetime_report.md` files in the same output
+directory.
+
 The extractor accepts either `--out-dir PATH` or a trailing `OUT_DIR`
 positional argument. It also accepts both `--summary-only` and
 `--summary_only`.
@@ -399,7 +460,18 @@ python calculate_lifetime_precision.py input.npz
 ```
 
 Here `input.npz` means the TrapDetect bundle created by `run_npz_batch.py`, not
-the raw camera archive such as `run1/photon_count0.npz`.
+the raw camera archive such as `run1/photon_count0.npz`. For bundle inputs the
+default `auto` measurement mode now prefers an epoch-statistics estimate built
+from cumulative non-final epoch transition times. If you want the older emitted
+batch transition mean instead, pass `--measurement-mode batch_transition`. Two
+explicit paper-inspired bundle modes are also available:
+`--measurement-mode paper_weighted_brightening` for monotone cumulative bright
+transitions and `--measurement-mode paper_k_interval_least_squares` for the
+multi-state interval-rate fit. Three additional report-oriented bundle modes are
+also available: `--measurement-mode paper_nonfinal_interval` for the pooled
+non-final interval histogram, `--measurement-mode paper_segmented_brightening`
+for contiguous brightening chains, and `--measurement-mode paper_segmented_darkening`
+for contiguous darkening chains.
 
 ```text
 python calculate_lifetime_precision.py input.npz --jsonl-out run1_precision.jsonl
@@ -410,6 +482,10 @@ If you already have extracted JSONL, that still works too:
 ```text
 python calculate_lifetime_precision.py out/batch_summary.jsonl --jsonl-out run1_precision.jsonl
 ```
+
+JSONL or manifest inputs still use the stored `batch_transition_lifetime`
+summary because they do not carry the per-run epoch rows needed for the bundle
+epoch toolset.
 
 If you want to suppress one of the default SNR-grounded internal bounds, use
 the corresponding opt-out flag:
@@ -458,7 +534,7 @@ Use the helper below to create a note stub in `notes/` without writing into the
 generated-output tree:
 
 ```text
-python create_validation_note.py "run1 validation audit" \
+python tools/create_validation_note.py "run1 validation audit" \
     --source analysis_outputs/run1_validation/run1_default_report_allframes.md \
     --source analysis_outputs/run1_validation/extracted_default_allframes/batch_summary.jsonl
 ```
@@ -471,32 +547,52 @@ names so generated and authored artifacts stay separate.
 Non-pipeline utility scripts now live under `tools/` so the repo root stays
 reserved for the main analysis chain and public entrypoints.
 
-- `tools/manual_review_session.py`: prepare a reviewer-facing JSONL session,
-    generate a companion markdown packet, and apply completed review sessions
-    back into a manual-review CSV plus rebuilt dataset artifacts.
-- `tools/manual_detector_update.py`: build a manual-review-backed eta artifact
-    and a reversible detector override config JSONL.
+- `tools/manual_review_session.py`: historical/session-based review-session
+    preparation and replay helper. The current detector-update corpus is rebuilt
+    directly from `manual_count_template.csv` with `tools/manual_data/rebuild_manual_test_data.py`.
+- `tools/manual_review/export_flagged_review_frames.py`: generate a bounded
+    review-image set plus `manual_count_template.csv`, or rerender an existing
+    review CSV with detector overlays and optional ledger-only Stage 5 modes.
+- `tools/manual_detector_update.py`: primary manual-review calibration entrypoint.
+    It consumes the detector-update dataset NPZ or the default auto-rebuilt
+    corpus, emits branch-local score-admissibility plus variant-count-legibility
+    artifacts for all four public variants, runs the canonical fixed-point
+    validation loop, and runs one additional fixed-point subpass for each
+    configured ledger-only Stage 5 selection mode.
+- `tools/manual_mode_parity.py`: one-command live parity sweep for accepted
+    named manual-calibrated presets against the detector-update corpus from
+    `manual_count_template.csv`.
 - `tools/manual_data/`: manual-review rebuild, inspection, and smoke-check tools
-    for the canonical `tests/test_data.npz` artifact.
+    for detector-update and legacy manual-review artifacts.
 - `tools/manual_review/`: CSV/manifest comparison and summary probes for the
-    manual-review audit inputs.
-- Root entrypoints such as `analyze_ions_fft.py`, `analyze_batch.py`,
-    `run_npz_batch.py`, `extract_npz_json.py`, `create_validation_note.py`, and
-    `calculate_lifetime_precision.py` remain unchanged.
+    manual-review audit inputs, including overlay rerenders for existing review
+    CSVs and the generated review-image sets.
+- `manual_calibrated_mode_presets/`: repo-local accepted post-fixed-point
+    manual-calibrated preset bundle used by `--manual-calibrated-mode`.
+- Root modules such as `analyze_ions_fft`, `runner`, `orchestration`,
+    `manual_review_contract`, and `npz_frame_access` are the canonical import
+    targets for new code.
+- Public root CLIs such as `analyze_ions_fft.py`, `analyze_batch.py`,
+    `run_npz_batch.py`, `extract_npz_json.py`, and
+    `calculate_lifetime_precision.py` remain supported public entrypoints.
+- `tools/create_validation_note.py` is the note-stub helper; it is no longer a
+    root entrypoint.
 
-Rebuild the canonical manual-review dataset from the on-disk CSV and manifests:
+Rebuild the current detector-update manual dataset from the root review CSV and
+precleaned source archives:
 
 ```text
-python tools/manual_data/rebuild_manual_test_data.py --format npz
+python tools/manual_data/rebuild_manual_test_data.py --format npz --review-csv manual_count_template.csv --source-npz-dir C:/Users/isaia/Desktop/run3_5926_precleaned --output manual_review_detector_update/manual_test_data_from_manual_count_template.npz
 ```
 
-If you want to trust CSV content piped from the current editor buffer instead of
-the on-disk review CSV, pipe it to the same tool. The stdin path takes priority
-over `--review-csv`:
+Build the JSONL view of the same detector-update corpus:
 
 ```text
-Get-Content manual_counts/psf_calibration_45.csv | python tools/manual_data/rebuild_manual_test_data.py --format jsonl --output analysis_outputs/manual_review_psf_calibration_25/manual_test_data.jsonl
+python tools/manual_data/rebuild_manual_test_data.py --format jsonl --review-csv manual_count_template.csv --source-npz-dir C:/Users/isaia/Desktop/run3_5926_precleaned --output manual_review_detector_update/manual_test_data_from_manual_count_template.jsonl
 ```
+
+If CSV content is piped from the current editor buffer, stdin takes priority
+over `--review-csv`; keep the same `--source-npz-dir` and `--output` arguments.
 
 Run the manual-review batch smoke check from its new location:
 
@@ -504,7 +600,8 @@ Run the manual-review batch smoke check from its new location:
 python tools/manual_data/focused_check.py
 ```
 
-Print a quick summary of the canonical manual-review NPZ:
+Print a quick summary of the legacy canonical manual-review NPZ used by older
+tests:
 
 ```text
 python tools/manual_review/summarize.py
@@ -564,6 +661,31 @@ Extractor `type: "epoch"` rows now keep the raw epoch lifetimes and also add
 `transition_real_time_lifetime_s` so the cumulative safe-prefix transition
 logic is visible after extraction.
 
+### Bundle reduction before lifetime calculation
+
+`run_npz_batch.py --auto-bundle` writes a frame-stats bundle by default.
+`calculate_lifetime_precision.py` expects a derived bundle that already
+contains run-level and batch-level transition statistics such as
+`batch_transition_lifetime_*` fields.
+
+Use one of these two supported paths:
+
+Create the derived statistics when the bundle is written:
+
+```text
+python run_npz_batch.py --auto-bundle --with-run-stats --with-batch-stats run1/photon_count0.npz
+```
+
+Or post-reduce an existing frame-only bundle before running the lifetime tool:
+
+```text
+python run_npz_batch.py --reduce-existing-bundle your_bundle.npz --with-run-stats --with-batch-stats --bundle-npz your_bundle_derived_stats.npz
+python calculate_lifetime_precision.py your_bundle_derived_stats.npz --measurement-mode auto --jsonl-out analysis_outputs/your_bundle_lifetime.jsonl
+```
+
+If you skip the reduction step, the lifetime tool will not find the derived
+transition metrics it needs and will fail against a frame-only bundle.
+
 ## Requirements and Limits
 
 - Input arrays must be grayscale, finite, and integer-valued at acquisition
@@ -595,130 +717,374 @@ python run_npz_batch.py -a --auto-bundle run1/photon_count0.npz
 | Path | Purpose |
 | ---- | ------- |
 | `analyze_ions_fft.py` | Single-frame detector and SNR-variant source of truth |
+| `analyze_ions_fft_float32.py` | Experimental mixed-precision detector module that keeps the canonical result contract while routing heavy Stage 3/4/5 image kernels through float32 |
 | `analyze_batch.py` | Per-run reduction for ordinary image files and reducer ownership layer |
 | `run_npz_batch.py` | Multi-run `.npz` orchestration, bundle writing, and parallel resource control |
+| `stage5_modes.py` | Stage 5 canonical/experimental mode specifications and nested ledger helpers |
 | `extract_npz_json.py` | Convert bundle `.npz` files to readable JSONL, including v7 variant rows |
+| `notes/project_architecture_mermaid.md` | Architecture diagrams, risk matrix, and document ownership map |
+| `notes/thesis_academic_dictionary.jsonl` | Symbol dictionary, validation boundaries, and thesis audit rules |
 | `run1/` | Example NPZ input data |
 | `tests/` | Automated test suite |
 
 ## More Detail
 
-- [ALGORITHM.md](ALGORITHM.md) explains the detector model, PSF assumptions,
+- [algorithm.md](algorithm.md) explains the detector model, PSF assumptions,
     heuristics, and decision metrics in more depth.
 - The tests in `tests/` are a good source of small, verified usage examples.
 
 ## Iterative Detector Update Pipeline
 
 The iterative manual-review pipeline is intentionally local and reversible.
-`tools/manual_detector_update.py` produces a bundle-backed eta artifact plus a
-JSONL override file, and `run_npz_batch.py --config ...` applies that override
-to one batch invocation only. This does not mutate the default detector config
-in `analyze_ions_fft.py` or `run_npz_batch.py`.
+`tools/manual_detector_update.py` is the primary operator entrypoint once you
+have a review CSV. It produces bundle-backed calibration artifacts plus a JSONL
+override file, and `run_npz_batch.py --config ...` applies that override to one
+batch invocation only. This does not mutate the default detector config in
+`analyze_ions_fft.py` or `run_npz_batch.py`.
 
-The review loop is centered on an editable CSV template plus a generated
-markdown packet. `prepare` exports review images, writes
-`manual_count_template.csv`, keeps `review_session.jsonl` as an audit copy, and
-generates `review_session.md`. `apply` reads the completed CSV template and
-rebuilds the manual-review dataset artifacts directly.
+Two starts are supported.
 
-Prepare a per-run JSONL session with the default 20-sample review count:
-
-```text
-python tools/manual_review_session.py prepare \
-    --input-dir analysis_outputs \
-    --glob "run1_default_full_photon_count*.jsonl"
-```
-
-Prepare a bundle-backed session from an existing admitted bundle NPZ:
+If you do not have a review CSV yet, first generate a review folder containing
+selected review PNGs plus a template CSV. The `--limit` value is the requested
+review-set size:
 
 ```text
-python tools/manual_review_session.py prepare --bundle-npz trapdetect_results_2026-05-07_at15h42m08s_rt00h21m22s_100npz.npz
+python tools/manual_review/export_flagged_review_frames.py --bundle-npz your_bundle.npz --limit 120 --output-dir manual_review_detector_update/review_round_01
 ```
 
-When `--output-dir` is omitted, per-run prepare writes to
-`analysis_outputs/manual_review_run1_last61/` and bundle prepare writes to
-`analysis_outputs/manual_review_ground_truth/`.
+That writes `images/`, `review_manifest.jsonl`, and `manual_count_template.csv`
+under the chosen output directory. If you already have a review CSV and want to
+rerender those same rows with the current detector or with a ledger-only Stage 5
+selection mode, use the same tool in `--review-csv` mode.
 
-Bundle-mode `prepare` uses a priority sampler instead of the older fixed
-bucket export path. The rule cycle is:
-
-- lowest SNR frame
-- 2 frames adjacent to the same decrease event
-- 2 frames adjacent to the same increase event
-- 4 frames inside or adjacent to a decrease-followed-by-increase window
-- 2 highest-ion-count frames
-- 2 lowest-ion-count frames
-
-The rule cycle repeats until the requested count is reached or the bundle runs
-out of unused candidates. `--bundle-adjacency-window` controls the frame radius
-used around decrease and increase anchors and around the recovery window.
-
-Recommended review flow: open `manual_count_template.csv` with a table editor
-such as Edit CSV, fill the manual count fields there, and then apply that CSV.
-
-Apply a completed review CSV and rebuild both NPZ and JSONL dataset artifacts:
+The current detector-update corpus is centered on the root
+`manual_count_template.csv` and the precleaned NPZ source directory
+`C:/Users/isaia/Desktop/run3_5926_precleaned`. Rebuild the detector-update NPZ
+directly from those two inputs:
 
 ```text
-python tools/manual_review_session.py apply analysis_outputs/manual_review_ground_truth/manual_count_template.csv
+python tools/manual_data/rebuild_manual_test_data.py --format npz --review-csv manual_count_template.csv --source-npz-dir C:/Users/isaia/Desktop/run3_5926_precleaned --output manual_review_detector_update/manual_test_data_from_manual_count_template.npz
 ```
 
-If you still want the older JSONL-driven path, `apply` also accepts
-`review_session.jsonl` plus an optional `--review-csv PATH` output target.
+The rebuild helper now treats copied `manual_count_template.csv` files without
+their own sibling manifests as detector-update CSVs too. That keeps saved
+review-session copies on the same direct CSV-plus-precleaned-NPZ rebuild path
+instead of falling back to the generic manifest-based manual-review builder.
 
-Build a manual-review-backed detector override after the dataset has been
-rebuilt:
+If you keep the canonical review CSV at the repo root and use the default
+detector-update dataset path, `tools/manual_detector_update.py` resolves that
+dataset automatically and rebuilds it when the CSV or source NPZ directory has
+changed. The shortest canonical command is therefore:
 
 ```text
-python tools/manual_detector_update.py --dataset-npz analysis_outputs/manual_review_ground_truth/manual_test_data.npz
+python tools/manual_detector_update.py --fixed-point-verbose-log --trace-noise-window-log
 ```
 
-That command also validates the override against the scored manual-review rows
-and reports how many checked frames matched or mismatched the manual counts.
+Build the local detector override from that rebuilt dataset:
 
-The detector override file is plain JSONL and can be passed to entrypoints that
-support `--config`, for example:
+```text
+python tools/manual_detector_update.py --dataset-npz manual_review_detector_update/manual_test_data_from_manual_count_template.npz --fixed-point-verbose-log --trace-noise-window-log
+```
+
+That command writes the update report and reversible override under
+`analysis_outputs/manual_detector_update/` by default. The override is plain
+JSONL and can be passed to entrypoints that support `--config`, for example:
 
 ```text
 python analyze_ions_fft.py --config analysis_outputs/manual_detector_update/manual_detector_override.jsonl frame.png
 ```
 
-### Example Run1 Procedure
+For the canonical detector module, that command runs an iterative fixed-point
+calibration loop: validate against scored manual-review rows, rebuild the
+branch eta and threshold artifacts from the resulting branch assignments, then
+repeat until the strict mismatch set and branch artifact summaries stop moving
+or the deterministic iteration cap is reached.
 
-One concrete iterative pass using the admitted `run1/` bundles is:
+The implemented artifact scope is wider than the top-level selected count.
+Every detector-update solve emits `score_admissibility` and
+`variant_count_legibility` artifacts for all four public variants:
 
-1. Start from the first admitted bundle and prepare the review session.
-2. Fill `manual_count_template.csv` in a table editor.
-3. Apply the completed CSV to rebuild `manual_test_data.npz` and `manual_test_data.jsonl`.
-4. Build the local detector override from that rebuilt dataset.
-5. Rerun the full `run1/` detector pass with the local override only.
-6. Compare the first pass and second pass lifetime summaries across the selected detector path and all 4 stored variants.
+- `anisotropic_gaussian`
+- `symmetric_gaussian`
+- `anisotropic_poisson`
+- `symmetric_poisson`
 
-CLI example:
+If the validation config also defines ledger-only experimental Stage 5 modes,
+the tool runs one additional fixed-point subpass for each configured mode under
+`analysis_outputs/manual_detector_update/_fp_modes/<mode_id>/`. Those mode
+subpasses keep the four public variants intact, rebuild mode-local threshold
+and eta artifacts against the selected mode, and then thread the resulting
+artifact paths back into `manual_detector_override.jsonl` so later validation
+or rerender commands can apply them without hand editing.
+
+The generated `manual_detector_update.md` report is organized into artifact,
+parameter-policy, calibration, validation, and fixed-point convergence
+sections so the iteration history is explicit rather than implied.
+
+The current fixed-point trace should be read as an audit artifact, not as proof
+that canonical strict manual parity has already been achieved.
+
+For the canonical minimal-upgrade path, only these calibration knobs are meant
+to move:
+
+- `eta_max_abs_correction`
+- `eta_runtime_min_coherence`
+
+The academic defaults used for canonical validation remain fixed:
+
+- `search_row_fraction = [0.0, 1.0]`
+- `search_col_fraction = [0.0, 1.0]`
+- `search_half_width = 10000`
+- `enable_gaussian_warning_count_corrections = False`
+
+That fixed policy matches the shipped canonical runtime as well: the default
+single-frame path already uses full-frame corrected-image Stage 3--5 routing,
+and the legacy Gaussian warning-count repair path stays off unless a
+compatibility-oriented run explicitly re-enables it.
+
+`--validation-config` is therefore reserved for explicitly experimental runs,
+for example when validating a noncanonical detector module. Canonical
+detector-update runs reject nonacademic validation overrides rather than
+silently merging them into the override file.
+
+### Named Manual-Calibrated Presets
+
+`analyze_ions_fft.py` and `run_npz_batch.py` now expose
+`--manual-calibrated-mode` as a simple selector for accepted post-fixed-point
+manual-calibrated presets. The default preset root is the repo-local
+`manual_calibrated_mode_presets/` bundle, so these named presets no longer
+depend on preserving a historical `analysis_outputs/...` investigation tree.
+
+Example single-frame invocation:
 
 ```text
-python tools/manual_review_session.py prepare --bundle-npz manual_test_run1/run1_iteration_bundle.npz
-
-python tools/manual_review_session.py apply analysis_outputs/manual_review_ground_truth/manual_count_template.csv
-
-python tools/manual_detector_update.py --dataset-npz analysis_outputs/manual_review_ground_truth/manual_test_data.npz
-
-python run_npz_batch.py --config analysis_outputs/manual_detector_update/manual_detector_override.jsonl --auto-bundle --keep-temp C:\Users\isaia\Desktop\run1
-
-python analyze_variant_transition_bundle.py --pretty manual_test_run1/run1_iteration_bundle.npz trapdetect_results_2026-05-11_at19h11m25s_rt00h24m47s_100npz.npz --output manual_test_run1/variant_lifetime_report.txt
+python analyze_ions_fft.py --manual-calibrated-mode mode_integrated_snr frame.png
 ```
 
-The fourth command uses the default Joblib CPU backend, auto-bundle output,
-and preserved bundle-only scratch. In the example above, that rerun bundle is
-`trapdetect_results_2026-05-11_at19h11m25s_rt00h24m47s_100npz.npz`. Replace the
-second bundle path with the auto-named rerun bundle you want to compare.
+Example batch invocation:
 
-The pretty report prints the selected path plus all 4 SNR variants with the
-retained transition lifetime mean, median, and mode, the retained epoch count,
-the number of included and excluded runs, and the summarized exclusion reasons.
+```text
+python run_npz_batch.py --manual-calibrated-mode mode_integrated_snr --auto-bundle --keep-temp C:/Users/isaia/Desktop/run3_5926_precleaned
+```
 
-If you already have reviewed CSVs from an earlier pass set and want to replay
-that whole staged workflow against the current detector into a fresh folder,
-the replay helper now supports three modes:
+The accepted named presets are:
+
+- `manual_calibrated_canonical`
+- `mode_integrated_snr`
+- `mode_support_mean_excess_snr`
+- `mode_support_sum_snr`
+- `mode_template_support_excess_density`
+
+On the current strict manual-count corpus derived from
+`manual_count_template.csv` there are 113 strict scored frames. The live
+parity results for these presets are:
+
+- `manual_calibrated_canonical`: `111 / 113`
+- `mode_integrated_snr`: `113 / 113`
+- `mode_support_mean_excess_snr`: `111 / 113`
+- `mode_support_sum_snr`: `113 / 113`
+- `mode_template_support_excess_density`: `113 / 113`
+
+The current candidates for future canonical-mode promotion are therefore:
+
+- `mode_integrated_snr`
+- `mode_support_sum_snr`
+- `mode_template_support_excess_density`
+
+This is a candidate set, not a claim that the shipped canonical default has
+already changed. The ordinary canonical runtime still defaults to the current
+canonical matched-SNR path unless one of these presets is selected explicitly.
+
+Run the one-command live parity sweep for these named presets against the
+detector-update corpus derived from `manual_count_template.csv`:
+
+```text
+python tools/manual_mode_parity.py
+```
+
+Restrict the sweep to one named preset and emit structured JSON instead of the
+human-readable summary:
+
+```text
+python tools/manual_mode_parity.py --mode mode_integrated_snr --json
+```
+
+### Current Batch And Mode-Ledger Commands
+
+Run the current detector-update override across a source archive directory. The
+input path is last so the command can be reused with another directory:
+
+```text
+python run_npz_batch.py --config analysis_outputs/manual_detector_update/manual_detector_override.jsonl --auto-bundle --keep-temp C:/Users/isaia/Desktop/run3_5926_precleaned
+```
+
+Run the full manual-count detector performance sweep when testing Stage 5 mode
+selection. This builds the 120-row NPZ from
+`C:\Users\isaia\Desktop\trapdetect\manual_count_template.csv`, configures all
+eight supported selection/threshold modes, runs the manual detector update with
+verbose fixed-point logging and the trace/noise-window log, then creates the
+histogram report. The run is intentionally wide: the canonical pass and each
+`_fp_modes/<mode_id>` pass still record the public SNR variants, so selection
+modes multiply the amount of per-variant diagnostic output.
+
+```powershell
+Set-Location "C:\Users\isaia\Desktop\trapdetect"
+
+$ReviewCsv = "C:\Users\isaia\Desktop\trapdetect\manual_count_template.csv"
+$SourceNpzDir = "C:\Users\isaia\Desktop\run3_5926_precleaned"
+$OutDir = "analysis_outputs\manual_detector_update_all_selection_methods_120csv_fixed"
+$DatasetNpz = "manual_review_detector_update\manual_test_data_from_manual_count_template.npz"
+$ValidationConfig = Join-Path $OutDir "all_selection_methods.validation.jsonl"
+$TraceJsonl = Join-Path $OutDir "manual_detector_trace_noise_window.jsonl"
+$HistogramDir = Join-Path $OutDir "histograms"
+
+New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
+
+Set-Content -Encoding ascii -Path $ValidationConfig -Value @'
+{"experimental_stage5_modes":[{"mode_id":"matched_snr_manual_calibrated","score_key":"matched_snr","ledger_only":true},{"mode_id":"integrated_snr_manual_calibrated","score_key":"integrated_snr","threshold":5.6,"ledger_only":true},{"mode_id":"support_sum_snr_manual_calibrated","score_key":"support_sum_snr","ledger_only":true},{"mode_id":"local_support_sum_snr_robust_manual_calibrated","score_key":"local_support_sum_snr_robust","threshold":5.6,"ledger_only":true},{"mode_id":"support_mean_excess_snr_manual_calibrated","score_key":"support_mean_excess_snr","ledger_only":true},{"mode_id":"robust_peak_snr_manual_calibrated","score_key":"robust_peak_snr","ledger_only":true},{"mode_id":"template_support_excess_density_manual_calibrated","score_key":"template_support_excess_density","threshold":0.02,"ledger_only":true},{"mode_id":"template_ncc_score_manual_calibrated","score_key":"template_ncc_score","ledger_only":true}]}
+'@
+
+.\.venv\Scripts\python.exe tools/manual_data/rebuild_manual_test_data.py --format npz --review-csv $ReviewCsv --source-npz-dir $SourceNpzDir --output $DatasetNpz
+
+.\.venv\Scripts\python.exe tools/manual_detector_update.py --dataset-npz $DatasetNpz --output-dir $OutDir --validation-config $ValidationConfig --fixed-point-verbose-log --trace-noise-window-log
+
+.\.venv\Scripts\python.exe tools/manual_detector_trace_histograms.py $TraceJsonl --output-dir $HistogramDir
+```
+
+Primary outputs from that sweep are:
+
+```text
+analysis_outputs/manual_detector_update_all_selection_methods_120csv_fixed/manual_detector_override.jsonl
+analysis_outputs/manual_detector_update_all_selection_methods_120csv_fixed/manual_detector_update_fixed_point_verbose.jsonl
+analysis_outputs/manual_detector_update_all_selection_methods_120csv_fixed/manual_detector_trace_noise_window.jsonl
+analysis_outputs/manual_detector_update_all_selection_methods_120csv_fixed/manual_detector_trace_noise_window.md
+analysis_outputs/manual_detector_update_all_selection_methods_120csv_fixed/_fp_modes/<mode_id>/manual_detector_update_fixed_point_verbose.jsonl
+analysis_outputs/manual_detector_update_all_selection_methods_120csv_fixed/histograms/manual_detector_trace_histograms.pdf
+analysis_outputs/manual_detector_update_all_selection_methods_120csv_fixed/histograms/manual_detector_trace_histograms.md
+analysis_outputs/manual_detector_update_all_selection_methods_120csv_fixed/histograms/data_wrangler_slope_and_stats.csv
+```
+
+The root trace/histogram above uses the final override's selected public mode.
+To analyze each selection/threshold mode as the promoted public mode, run a
+selected-mode trace and histogram pass per mode. This is the command to use for
+the full SNR-variant by selection-mode performance matrix:
+
+```powershell
+Set-Location "C:\Users\isaia\Desktop\trapdetect"
+
+$ReviewCsv = "C:\Users\isaia\Desktop\trapdetect\manual_count_template.csv"
+$SourceNpzDir = "C:\Users\isaia\Desktop\run3_5926_precleaned"
+$OutRoot = "analysis_outputs\manual_detector_update_selected_mode_matrix_120csv"
+$DatasetNpz = "manual_review_detector_update\manual_test_data_from_manual_count_template.npz"
+
+$Modes = @(
+    @{ mode_id = "matched_snr_manual_calibrated"; score_key = "matched_snr" },
+    @{ mode_id = "integrated_snr_manual_calibrated"; score_key = "integrated_snr"; threshold = 5.6 },
+    @{ mode_id = "support_sum_snr_manual_calibrated"; score_key = "support_sum_snr" },
+    @{ mode_id = "local_support_sum_snr_robust_manual_calibrated"; score_key = "local_support_sum_snr_robust"; threshold = 5.6 },
+    @{ mode_id = "support_mean_excess_snr_manual_calibrated"; score_key = "support_mean_excess_snr" },
+    @{ mode_id = "robust_peak_snr_manual_calibrated"; score_key = "robust_peak_snr" },
+    @{ mode_id = "template_support_excess_density_manual_calibrated"; score_key = "template_support_excess_density"; threshold = 0.02 },
+    @{ mode_id = "template_ncc_score_manual_calibrated"; score_key = "template_ncc_score" }
+)
+
+New-Item -ItemType Directory -Force -Path $OutRoot | Out-Null
+
+.\.venv\Scripts\python.exe tools/manual_data/rebuild_manual_test_data.py --format npz --review-csv $ReviewCsv --source-npz-dir $SourceNpzDir --output $DatasetNpz
+
+foreach ($Mode in $Modes) {
+    $ModeOut = Join-Path $OutRoot $Mode.mode_id
+    $ValidationConfig = Join-Path $ModeOut "selected_mode.validation.jsonl"
+    $TraceJsonl = Join-Path $ModeOut "manual_detector_trace_noise_window.jsonl"
+    $HistogramDir = Join-Path $ModeOut "histograms"
+
+    New-Item -ItemType Directory -Force -Path $ModeOut | Out-Null
+
+    $ModeSpec = [ordered]@{
+        mode_id = $Mode.mode_id
+        score_key = $Mode.score_key
+        ledger_only = $true
+    }
+    if ($Mode.ContainsKey("threshold")) {
+        $ModeSpec["threshold"] = [double]$Mode.threshold
+    }
+
+    $ModeConfig = [ordered]@{
+        experimental_stage5_modes = @($ModeSpec)
+        experimental_stage5_selected_mode = $Mode.mode_id
+        experimental_stage5_mode_policy = "ledger_only"
+    }
+    $ModeConfig | ConvertTo-Json -Compress -Depth 6 | Set-Content -Encoding ascii -Path $ValidationConfig
+
+    .\.venv\Scripts\python.exe tools/manual_detector_update.py --dataset-npz $DatasetNpz --output-dir $ModeOut --validation-config $ValidationConfig --fixed-point-verbose-log --trace-noise-window-log
+
+    .\.venv\Scripts\python.exe tools/manual_detector_trace_histograms.py $TraceJsonl --output-dir $HistogramDir
+}
+```
+
+Each selected-mode directory writes:
+
+```text
+analysis_outputs/manual_detector_update_selected_mode_matrix_120csv/<mode_id>/manual_detector_update_fixed_point_verbose.jsonl
+analysis_outputs/manual_detector_update_selected_mode_matrix_120csv/<mode_id>/manual_detector_trace_noise_window.jsonl
+analysis_outputs/manual_detector_update_selected_mode_matrix_120csv/<mode_id>/manual_detector_trace_noise_window.md
+analysis_outputs/manual_detector_update_selected_mode_matrix_120csv/<mode_id>/histograms/manual_detector_trace_histograms.pdf
+analysis_outputs/manual_detector_update_selected_mode_matrix_120csv/<mode_id>/histograms/manual_detector_trace_histograms.md
+analysis_outputs/manual_detector_update_selected_mode_matrix_120csv/<mode_id>/histograms/data_wrangler_slope_and_stats.csv
+```
+
+Add ledger-only Stage 5 score modes directly from the batch CLI. These commands
+preserve the four public top-level `snr_variants`; the extra scores are nested
+under each variant's `modes` ledger and do not replace the canonical count.
+Deprecated `aperture_*` and `psf_region_*` score keys remain accepted as aliases
+for older configs, but new commands should use support-based names.
+
+```text
+python run_npz_batch.py --config analysis_outputs/manual_detector_update/manual_detector_override.jsonl --selection-score matched_snr --auto-bundle --keep-temp C:/Users/isaia/Desktop/run3_5926_precleaned
+
+python run_npz_batch.py --config analysis_outputs/manual_detector_update/manual_detector_override.jsonl --selection-score integrated_snr --selection-threshold 5.6 --auto-bundle --keep-temp C:/Users/isaia/Desktop/run3_5926_precleaned
+
+python run_npz_batch.py --config analysis_outputs/manual_detector_update/manual_detector_override.jsonl --selection-score local_support_sum_snr_robust --selection-threshold 5.6 --auto-bundle --keep-temp C:/Users/isaia/Desktop/run3_5926_precleaned
+
+python run_npz_batch.py --config analysis_outputs/manual_detector_update/manual_detector_override.jsonl --selection-score template_support_excess_density --selection-threshold 0.02 --auto-bundle --keep-temp C:/Users/isaia/Desktop/run3_5926_precleaned
+```
+
+To promote a configured mode into the public count, pass its mode id with
+`--selected-stage5-mode`. For a CLI-created ledger mode, the mode id is
+`cli_<score_key>_ledger`:
+
+```text
+python run_npz_batch.py --config analysis_outputs/manual_detector_update/manual_detector_override.jsonl --selection-score integrated_snr --selection-threshold 5.6 --selected-stage5-mode cli_integrated_snr_ledger --auto-bundle --keep-temp C:/Users/isaia/Desktop/run3_5926_precleaned
+```
+
+Regenerate manual-template review overlays for the same score modes without a
+temporary config-generation script:
+
+```text
+python tools/manual_review/export_flagged_review_frames.py --review-csv manual_count_template.csv --source-npz-dir C:/Users/isaia/Desktop/run3_5926_precleaned --detector-config analysis_outputs/manual_detector_update/manual_detector_override.jsonl --output-dir analysis_outputs/selection_score_artifact_regenerated/manual_template_overlays_matched_snr --selection-score matched_snr
+
+python tools/manual_review/export_flagged_review_frames.py --review-csv manual_count_template.csv --source-npz-dir C:/Users/isaia/Desktop/run3_5926_precleaned --detector-config analysis_outputs/manual_detector_update/manual_detector_override.jsonl --output-dir analysis_outputs/selection_score_artifact_regenerated/manual_template_overlays_integrated_snr --selection-score integrated_snr --selection-threshold 5.6
+
+python tools/manual_review/export_flagged_review_frames.py --review-csv manual_count_template.csv --source-npz-dir C:/Users/isaia/Desktop/run3_5926_precleaned --detector-config analysis_outputs/manual_detector_update/manual_detector_override.jsonl --output-dir analysis_outputs/selection_score_artifact_regenerated/manual_template_overlays_local_support_sum_snr_robust --selection-score local_support_sum_snr_robust --selection-threshold 5.6
+
+python tools/manual_review/export_flagged_review_frames.py --review-csv manual_count_template.csv --source-npz-dir C:/Users/isaia/Desktop/run3_5926_precleaned --detector-config analysis_outputs/manual_detector_update/manual_detector_override.jsonl --output-dir analysis_outputs/selection_score_artifact_regenerated/manual_template_overlays_template_support_excess_density --selection-score template_support_excess_density --selection-threshold 0.02
+```
+
+Audit the manual oracle directly:
+
+```text
+python -m pytest -vv -ra --tb=long tests/test_manual_test_data.py::TestManualOracleAudit
+```
+
+The current corpus has 120 labeled rows: 113 strict-scored rows and 7
+flagged-advisory rows. The oracle command is intentionally allowed to fail
+informatively while strict parity is unresolved; current known examples include
+`bundle_001`, `bundle_031`, and `bundle_092`, with patch-out context around
+`bundle_030`, `bundle_059`, and `bundle_093`.
+
+Historical Run1 review-session replay remains available when you intentionally
+want to compare older staged pass sets against the current detector. The replay
+helper supports three modes:
 
 - `baseline`: generate one reusable baseline bundle
 - `pass`: replay one saved reviewed session against an existing baseline bundle
@@ -728,13 +1094,13 @@ For speed-sensitive benchmarking, generate the baseline once and reuse it for
 later pass replays:
 
 ```text
-python tools/manual_data/replay_manual_review_passes.py baseline --npz-source C:\Users\isaia\Desktop\run1 --output-dir manual_test_run1\replay_baseline --overwrite --benchmark
+python tools/manual_data/replay_manual_review_passes.py baseline --npz-source C:/Users/isaia/Desktop/run1 --output-dir manual_test_run1/replay_baseline --overwrite --benchmark
 ```
 
 Then replay one saved pass directly without creating a wrapper directory:
 
 ```text
-python tools/manual_data/replay_manual_review_passes.py pass --npz-source C:\Users\isaia\Desktop\run1 --session-dir manual_test_run1\review_session_pass3 --baseline-bundle manual_test_run1\replay_baseline\run1_iteration_bundle.npz --output-dir manual_test_run1\replay_pass3 --overwrite --benchmark
+python tools/manual_data/replay_manual_review_passes.py pass --npz-source C:/Users/isaia/Desktop/run1 --session-dir manual_test_run1/review_session_pass3 --baseline-bundle manual_test_run1/replay_baseline/run1_iteration_bundle.npz --output-dir manual_test_run1/replay_pass3 --overwrite --benchmark
 ```
 
 If you want the whole staged workflow in one command, keep using `replay-all`.
@@ -744,76 +1110,15 @@ detector override in the new folder, reruns the batch, and writes one replay
 comparison report at the end:
 
 ```text
-python tools/manual_data/replay_manual_review_passes.py replay-all --npz-source C:\Users\isaia\Desktop\run1 --manual-review-dir manual_test_run1 --output-dir manual_test_run1\replay_current_detector --overwrite
+python tools/manual_data/replay_manual_review_passes.py replay-all --npz-source C:/Users/isaia/Desktop/run1 --manual-review-dir manual_test_run1 --output-dir manual_test_run1/replay_current_detector --overwrite
 ```
 
 If you only want the most complete reviewed CSV, not every intermediate pass,
 add `--final-only`:
 
 ```text
-python tools/manual_data/replay_manual_review_passes.py replay-all --npz-source C:\Users\isaia\Desktop\run1 --manual-review-dir manual_test_run1 --output-dir manual_test_run1\replay_current_detector_final --final-only --overwrite
+python tools/manual_data/replay_manual_review_passes.py replay-all --npz-source C:/Users/isaia/Desktop/run1 --manual-review-dir manual_test_run1 --output-dir manual_test_run1/replay_current_detector_final --final-only --overwrite
 ```
 
-Jupyter example:
-
-```python
-from pathlib import Path
-import subprocess
-import sys
-
-from tools.manual_detector_update import build_manual_detector_update
-from tools.manual_review_session import apply_review_session, prepare_review_session
-
-first_bundle = Path("manual_test_run1/run1_iteration_bundle.npz")
-review_dir = Path("analysis_outputs/manual_review_ground_truth")
-run1_dir = Path(r"C:\Users\isaia\Desktop\run1")
-# Replace this with the auto-named rerun bundle you want to compare.
-second_bundle = Path("trapdetect_results_2026-05-11_at19h11m25s_rt00h24m47s_100npz.npz")
-report_path = Path("manual_test_run1/variant_lifetime_report.txt")
-
-session = prepare_review_session(bundle_npz=first_bundle, output_dir=review_dir)
-session["template_csv_path"]
-```
-
-After you edit the CSV in a table editor, run the next cell:
-
-```python
-applied = apply_review_session(session["template_csv_path"])
-
-update = build_manual_detector_update(
-    dataset_npz_path=applied["dataset_npz_path"],
-    validate_manual_counts=True,
-)
-
-subprocess.run(
-    [
-        sys.executable,
-        "run_npz_batch.py",
-        "--config",
-        str(update["override_jsonl_path"]),
-        "--auto-bundle",
-        "--keep-temp",
-        str(run1_dir),
-    ],
-    check=True,
-)
-```
-
-Then save the pretty lifetime comparison report:
-
-```python
-subprocess.run(
-    [
-        sys.executable,
-        "analyze_variant_transition_bundle.py",
-        "--pretty",
-        str(first_bundle),
-        str(second_bundle),
-        "--output",
-        str(report_path),
-    ],
-    check=True,
-)
-
-report_path
-```
+For API-level automation, use the same commands as the contract and mirror the
+small examples in `tests/` so manual parity failures remain visible.
